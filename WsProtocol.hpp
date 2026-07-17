@@ -8,6 +8,7 @@ constructor_args:
   - uart: "uart_ext_controller"
   - baudrate: 115200
   - chassis_topic_name: "chassis_data"
+  - referee_topic_name: "sentry_ref"
   - thread_priority_uart: LibXR::Thread::Priority::LOW
 template_args: []
 required_hardware: uart
@@ -20,6 +21,7 @@ depends:
 #include <cstdint>
 
 #include "HostData.hpp"
+#include "Referee.hpp"
 #include "app_framework.hpp"
 #include "crc.hpp"
 #include "libxr_def.hpp"
@@ -50,6 +52,7 @@ class WsProtocol : public LibXR::Application {
   static constexpr uint32_t CHASSIS_ZERO_PUBLISH_INTERVAL_MS = 50U;
   static constexpr size_t DEBUG_PACKAGE_COUNT = 10U;
   static constexpr size_t DEBUG_PACKAGE_NAME_LENGTH = 10U;
+  static constexpr uint16_t PROTOCOL_VERSION = 3U;
 
   enum class Status : uint8_t { OFFLINE = 0U, RUNNING };
   enum class RxCommandID : uint8_t { ROBOT_COMMAND = 0x01U };
@@ -68,6 +71,7 @@ class WsProtocol : public LibXR::Application {
     JOINT_STATE = 0x0CU,
     BUFF = 0x0DU,
     GIMBAL_STATE = 0x0EU,
+    PROTOCOL_STATUS = 0x0FU,
   };
 
   struct [[gnu::packed]] Header {
@@ -163,16 +167,7 @@ class WsProtocol : public LibXR::Application {
     RobotStateInfoData data;
   };
   struct [[gnu::packed]] EventData {
-    uint8_t non_overlapping_supply_zone : 1;
-    uint8_t overlapping_supply_zone : 1;
-    uint8_t supply_zone : 1;
-    uint8_t small_energy : 1;
-    uint8_t big_energy : 1;
-    uint8_t central_highland : 2;
-    uint8_t reserved_1 : 1;
-    uint8_t trapezoidal_highland : 2;
-    uint8_t center_gain_zone : 2;
-    uint8_t reserved_2 : 4;
+    uint32_t event_bits;
   };
   struct [[gnu::packed]] EventPayload {
     uint32_t time_stamp;
@@ -188,26 +183,23 @@ class WsProtocol : public LibXR::Application {
     PidDebugData data;
   };
   struct [[gnu::packed]] AllRobotHpData {
-    uint16_t red_1_robot_hp;
-    uint16_t red_2_robot_hp;
-    uint16_t red_3_robot_hp;
-    uint16_t red_4_robot_hp;
-    uint16_t red_7_robot_hp;
-    uint16_t red_outpost_hp;
-    uint16_t red_base_hp;
-    uint16_t blue_1_robot_hp;
-    uint16_t blue_2_robot_hp;
-    uint16_t blue_3_robot_hp;
-    uint16_t blue_4_robot_hp;
-    uint16_t blue_7_robot_hp;
-    uint16_t blue_outpost_hp;
-    uint16_t blue_base_hp;
+    uint16_t ally_1_robot_hp;
+    uint16_t ally_2_robot_hp;
+    uint16_t ally_3_robot_hp;
+    uint16_t ally_4_robot_hp;
+    int16_t damage_difference;
+    uint16_t ally_7_robot_hp;
+    uint16_t ally_outpost_hp;
+    uint16_t ally_base_hp;
+    uint16_t enemy_outpost_hp;
+    uint16_t enemy_base_hp;
   };
   struct [[gnu::packed]] AllRobotHpPayload {
     uint32_t time_stamp;
     AllRobotHpData data;
   };
   struct [[gnu::packed]] GameStatusData {
+    uint8_t game_type;
     uint8_t game_progress;
     uint16_t stage_remaining_time;
   };
@@ -239,51 +231,33 @@ class WsProtocol : public LibXR::Application {
     GroundRobotPositionData data;
   };
   struct [[gnu::packed]] RfidStatusData {
-    uint32_t base_gain_point : 1;
-    uint32_t central_highland_gain_point : 1;
-    uint32_t enemy_central_highland_gain_point : 1;
-    uint32_t friendly_trapezoidal_highland_gain_point : 1;
-    uint32_t enemy_trapezoidal_highland_gain_point : 1;
-    uint32_t friendly_fly_ramp_front_gain_point : 1;
-    uint32_t friendly_fly_ramp_back_gain_point : 1;
-    uint32_t enemy_fly_ramp_front_gain_point : 1;
-    uint32_t enemy_fly_ramp_back_gain_point : 1;
-    uint32_t friendly_central_highland_lower_gain_point : 1;
-    uint32_t friendly_central_highland_upper_gain_point : 1;
-    uint32_t enemy_central_highland_lower_gain_point : 1;
-    uint32_t enemy_central_highland_upper_gain_point : 1;
-    uint32_t friendly_highway_lower_gain_point : 1;
-    uint32_t friendly_highway_upper_gain_point : 1;
-    uint32_t enemy_highway_lower_gain_point : 1;
-    uint32_t enemy_highway_upper_gain_point : 1;
-    uint32_t friendly_fortress_gain_point : 1;
-    uint32_t friendly_outpost_gain_point : 1;
-    uint32_t friendly_supply_zone_non_exchange : 1;
-    uint32_t friendly_supply_zone_exchange : 1;
-    uint32_t friendly_big_resource_island : 1;
-    uint32_t enemy_big_resource_island : 1;
-    uint32_t center_gain_point : 1;
-    uint32_t reserved : 8;
+    uint32_t rfid_status;
+    uint8_t rfid_status_2;
   };
   struct [[gnu::packed]] RfidStatusPayload {
     uint32_t time_stamp;
     RfidStatusData data;
   };
   struct [[gnu::packed]] RobotStatusData {
+    uint16_t source_valid_mask;
     uint8_t robot_id;
     uint8_t robot_level;
     uint16_t current_hp;
     uint16_t maximum_hp;
     uint16_t shooter_barrel_cooling_value;
     uint16_t shooter_barrel_heat_limit;
+    uint16_t chassis_power_limit;
+    float bullet_speed_limit;
+    uint8_t power_management_output;
     uint16_t shooter_17mm_1_barrel_heat;
     float robot_position_x;
     float robot_position_y;
     float robot_position_angle;
-    uint8_t armor_id : 4;
-    uint8_t hp_deduction_reason : 4;
+    uint8_t raw_damage_byte;
     uint16_t projectile_allowance_17mm;
+    uint16_t projectile_allowance_42mm;
     uint16_t remaining_gold_coin;
+    uint16_t projectile_allowance_fortress;
   };
   struct [[gnu::packed]] RobotStatusPayload {
     uint32_t time_stamp;
@@ -299,7 +273,7 @@ class WsProtocol : public LibXR::Application {
   };
   struct [[gnu::packed]] BuffData {
     uint8_t recovery_buff;
-    uint8_t cooling_buff;
+    uint16_t cooling_buff;
     uint8_t defence_buff;
     uint8_t vulnerability_buff;
     uint16_t attack_buff;
@@ -309,6 +283,30 @@ class WsProtocol : public LibXR::Application {
     uint32_t time_stamp;
     BuffData data;
   };
+  struct [[gnu::packed]] ProtocolStatusData {
+    uint16_t custom_protocol_version;
+    uint8_t referee_protocol_major;
+    uint8_t referee_protocol_minor;
+    uint8_t referee_protocol_patch;
+    uint8_t referee_online;
+    uint16_t supported_source_mask;
+    uint16_t valid_source_mask;
+    uint8_t status_sequence;
+  };
+  struct [[gnu::packed]] ProtocolStatusPayload {
+    uint32_t time_stamp;
+    ProtocolStatusData data;
+  };
+
+  static_assert(sizeof(AllRobotHpData) == 20,
+                "AllRobotHpData V3 size mismatch");
+  static_assert(sizeof(GameStatusData) == 4, "GameStatusData V3 size mismatch");
+  static_assert(sizeof(RfidStatusData) == 5, "RfidStatusData V3 size mismatch");
+  static_assert(sizeof(RobotStatusData) == 42,
+                "RobotStatusData V3 size mismatch");
+  static_assert(sizeof(BuffData) == 8, "BuffData V3 size mismatch");
+  static_assert(sizeof(ProtocolStatusData) == 11,
+                "ProtocolStatusData V3 size mismatch");
   struct [[gnu::packed]] GimbalStateData {
     uint8_t mode;
     float pitch;
@@ -330,6 +328,7 @@ class WsProtocol : public LibXR::Application {
   WsProtocol(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
              uint32_t task_stack_depth_uart, const char* uart,
              uint32_t baudrate, const char* chassis_topic_name,
+             const char* referee_topic_name,
              LibXR::Thread::Priority thread_priority_uart =
                  LibXR::Thread::Priority::LOW)
       : uart_(hw.template FindOrExit<LibXR::UART>({uart})),
@@ -347,6 +346,16 @@ class WsProtocol : public LibXR::Application {
         ChassisWatchdog, this, CHASSIS_WATCHDOG_CHECK_INTERVAL_MS);
     LibXR::Timer::Add(chassis_watchdog_);
     LibXR::Timer::Start(chassis_watchdog_);
+    auto referee_topic = LibXR::Topic::Find(referee_topic_name, nullptr);
+    ASSERT(referee_topic != nullptr);
+    auto referee_callback = LibXR::Topic::Callback::Create(
+        [](bool in_isr, WsProtocol* self,
+           const Referee::RobotGameRefereePack& data) {
+          UNUSED(in_isr);
+          self->OnRefereeUpdate(data);
+        },
+        this);
+    LibXR::Topic(referee_topic).RegisterCallback(referee_callback);
     thread_.Create(this, ThreadFunc, "WsProtocol", task_stack_depth_uart,
                    LibXR::Thread::Priority::MEDIUM);
   }
@@ -435,6 +444,10 @@ class WsProtocol : public LibXR::Application {
   LibXR::ErrorCode SendBuff(const BuffData& data) {
     return SendTimestamped<BuffData, BuffPayload>(TxCommandID::BUFF, data);
   }
+  LibXR::ErrorCode SendProtocolStatus(const ProtocolStatusData& data) {
+    return SendTimestamped<ProtocolStatusData, ProtocolStatusPayload>(
+        TxCommandID::PROTOCOL_STATUS, data);
+  }
   LibXR::ErrorCode SendGimbalState(const GimbalStateData& data) {
     return SendTimestamped<GimbalStateData, GimbalStatePayload>(
         TxCommandID::GIMBAL_STATE, data);
@@ -457,6 +470,113 @@ class WsProtocol : public LibXR::Application {
   static void ThreadFunc(WsProtocol* self) { self->Run(); }
   static void ChassisWatchdog(WsProtocol* self) {
     self->CheckChassisCommandFreshness();
+    self->CheckProtocolStatus();
+  }
+
+  void OnRefereeUpdate(const Referee::RobotGameRefereePack& data) {
+    {
+      LibXR::Mutex::LockGuard lock(referee_mutex_);
+      referee_data_ = data;
+      protocol_status_dirty_ = true;
+    }
+
+    switch (static_cast<Referee::CommandID>(data.source_command_id)) {
+      case Referee::CommandID::REF_CMD_ID_GAME_STATUS: {
+        GameStatusData output{data.game_status.game_type,
+                              data.game_status.game_progress,
+                              data.game_status.stage_remain_time};
+        SendGameStatus(output);
+        break;
+      }
+      case Referee::CommandID::REF_CMD_ID_GAME_ROBOT_HP: {
+        AllRobotHpData output{};
+        LibXR::Memory::FastCopy(&output, &data.robot_hp, sizeof(output));
+        SendAllRobotHp(output);
+        break;
+      }
+      case Referee::CommandID::REF_CMD_ID_FIELD_EVENTS: {
+        EventData output{};
+        LibXR::Memory::FastCopy(&output.event_bits, &data.field_event,
+                                sizeof(output.event_bits));
+        SendEventData(output);
+        break;
+      }
+      case Referee::CommandID::REF_CMD_ID_RFID: {
+        RfidStatusData output{data.rfid.rfid_status, data.rfid.rfid_status_2};
+        SendRfidStatus(output);
+        break;
+      }
+      case Referee::CommandID::REF_CMD_ID_ROBOT_BUFF: {
+        BuffData output{};
+        LibXR::Memory::FastCopy(&output, &data.robot_buff, sizeof(output));
+        SendBuff(output);
+        break;
+      }
+      case Referee::CommandID::REF_CMD_ID_ROBOT_STATUS:
+      case Referee::CommandID::REF_CMD_ID_POWER_HEAT_DATA:
+      case Referee::CommandID::REF_CMD_ID_ROBOT_POS:
+      case Referee::CommandID::REF_CMD_ID_ROBOT_DMG:
+      case Referee::CommandID::REF_CMD_ID_BULLET_REMAINING:
+        SendRobotStatus(BuildRobotStatus(data));
+        break;
+      default:
+        break;
+    }
+  }
+
+  static RobotStatusData BuildRobotStatus(
+      const Referee::RobotGameRefereePack& data) {
+    RobotStatusData output{};
+    output.source_valid_mask = data.source_valid_mask;
+    output.robot_id = data.robot_status.robot_id;
+    output.robot_level = data.robot_status.robot_level;
+    output.current_hp = data.robot_status.remain_hp;
+    output.maximum_hp = data.robot_status.max_hp;
+    output.shooter_barrel_cooling_value =
+        data.robot_status.shooter_cooling_value;
+    output.shooter_barrel_heat_limit = data.robot_status.shooter_heat_limit;
+    output.chassis_power_limit = data.robot_status.chassis_power_limit;
+    output.bullet_speed_limit = data.robot_status.bullet_speed_limit;
+    output.power_management_output =
+        static_cast<uint8_t>(data.robot_status.power_gimbal_output) |
+        static_cast<uint8_t>(data.robot_status.power_chassis_output << 1U) |
+        static_cast<uint8_t>(data.robot_status.power_launcher_output << 2U);
+    output.shooter_17mm_1_barrel_heat = data.power_heat.launcher_id1_17_heat;
+    output.robot_position_x = data.robot_pos.x;
+    output.robot_position_y = data.robot_pos.y;
+    output.robot_position_angle = data.robot_pos.angle;
+    LibXR::Memory::FastCopy(&output.raw_damage_byte, &data.robot_damage,
+                            sizeof(output.raw_damage_byte));
+    output.projectile_allowance_17mm = data.bullet_remain.bullet_17_remain;
+    output.projectile_allowance_42mm = data.bullet_remain.bullet_42_remain;
+    output.remaining_gold_coin = data.bullet_remain.coin_remain;
+    output.projectile_allowance_fortress = data.bullet_remain.bullet_17_store;
+    return output;
+  }
+
+  void CheckProtocolStatus() {
+    const uint32_t now_ms = NowMilliseconds();
+    Referee::RobotGameRefereePack referee_data{};
+    bool should_send = false;
+    {
+      LibXR::Mutex::LockGuard lock(referee_mutex_);
+      should_send = protocol_status_dirty_ || next_protocol_status_ms_ == 0U ||
+                    now_ms >= next_protocol_status_ms_;
+      if (!should_send) {
+        return;
+      }
+      referee_data = referee_data_;
+      protocol_status_dirty_ = false;
+      next_protocol_status_ms_ = now_ms + 1000U;
+    }
+    ProtocolStatusData output{};
+    output.custom_protocol_version = PROTOCOL_VERSION;
+    output.referee_protocol_major = 2U;
+    output.referee_online = referee_data.referee_online ? 1U : 0U;
+    output.supported_source_mask = Referee::SUPPORTED_SOURCE_MASK;
+    output.valid_source_mask = referee_data.source_valid_mask;
+    output.status_sequence = protocol_status_sequence_++;
+    SendProtocolStatus(output);
   }
   static uint32_t NowMilliseconds() {
     return static_cast<uint32_t>(LibXR::Timebase::GetMilliseconds());
@@ -557,20 +677,25 @@ class WsProtocol : public LibXR::Application {
   LibXR::WriteOperation write_op_;
   LibXR::Mutex tx_mutex_;
   LibXR::Mutex chassis_mutex_;
+  LibXR::Mutex referee_mutex_;
   LibXR::Thread thread_;
   LibXR::Timer::TimerHandle chassis_watchdog_ = nullptr;
   LibXR::Topic chassis_topic_;
   ReceiveFrame rx_frame_{};
   Data data_{};
+  Referee::RobotGameRefereePack referee_data_{};
   uint8_t tx_buffer_[MAX_FRAME_SIZE]{};
   uint8_t byte_ = 0U;
   uint32_t startup_time_ms_ = 0U;
   uint32_t last_robot_command_time_ms_ = 0U;
   uint32_t last_zero_publish_time_ms_ = 0U;
+  uint32_t next_protocol_status_ms_ = 0U;
+  uint8_t protocol_status_sequence_ = 0U;
   bool robot_command_received_ = false;
   bool robot_command_parsed_ = false;
   bool stale_zero_published_ = false;
   bool last_parse_ = false;
+  bool protocol_status_dirty_ = true;
 };
 
 #ifdef WSPROTOCOL_RESTORE_DEBUG
