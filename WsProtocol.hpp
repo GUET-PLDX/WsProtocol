@@ -14,6 +14,7 @@ template_args: []
 required_hardware: uart
 depends:
   - pldx/HostData
+  - pldx/Referee
 === END MANIFEST === */
 // clang-format on
 
