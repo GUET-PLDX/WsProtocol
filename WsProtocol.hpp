@@ -340,7 +340,6 @@ class WsProtocol : public LibXR::Application {
         chassis_topic_(LibXR::Topic::CreateTopic<HostData::HostChassisTarget>(
             chassis_topic_name)) {
     UNUSED(app);
-    UNUSED(thread_priority_uart);
     uart_->SetConfig({baudrate, LibXR::UART::Parity::NO_PARITY, 8U, 1U});
     startup_time_ms_ = NowMilliseconds();
     chassis_watchdog_ = LibXR::Timer::CreateTask(
@@ -358,7 +357,7 @@ class WsProtocol : public LibXR::Application {
         this);
     LibXR::Topic(referee_topic).RegisterCallback(referee_callback);
     thread_.Create(this, ThreadFunc, "WsProtocol", task_stack_depth_uart,
-                   LibXR::Thread::Priority::MEDIUM);
+                   thread_priority_uart);
   }
 
   LibXR::ErrorCode SendFrame(TxCommandID command_id, const void* payload,
